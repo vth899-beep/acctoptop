@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lấy STT + 2FA (Mobile)</title>
+
+<style>
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, Arial;
+        background: #f5f5f5;
+        margin: 0;
+        padding: 15px;
+    }
+    h2 { text-align: center; }
+    .card {
+        background: #fff;
+        border-radius: 12px;
+        padding: 15px;
+        margin-bottom: 15px;
+        box-shadow: 0 2px 5px rgba(0,0,0,.1);
+    }
+    textarea {
+        width: 100%;
+        padding: 12px;
+        margin-top: 8px;
+        font-size: 16px;
+        border-radius: 8px;
+        border: 1px solid #ccc;
+        box-sizing: border-box;
+    }
+    button {
+        width: 33%;
+        padding: 12px;
+        margin: 10px auto 0 auto;
+        display: block;
+        font-size: 15px;
+        border: none;
+        border-radius: 10px;
+        background: #007aff;
+        color: white;
+    }
+    button.copy { background: #34c759; width: 33%; margin-left: auto; margin-right: auto; }
+    .field {
+        margin-top: 10px;
+        font-size: 17px;
+        word-break: break-all;
+        text-align: center;
+    }
+    .otp {
+        font-size: 32px;
+        text-align: center;
+        letter-spacing: 6px;
+        margin: 10px 0;
+        font-weight: bold;
+    }
+    .note {
+        font-size: 13px;
+        color: #666;
+        margin-top: 6px;
+        text-align: center;
+    }
+
+    
+</style>
+</head>
+
+<body>
+
+<h2>📱 LẤY STT + 2FA</h2>
+
+<!-- PAGE: NHẬP STT -->
+<div id="pageInput">
+    <div class="card">
+        <b>📋 Trang nhập STT</b>
+        <textarea id="accList" placeholder="050|user|pass|SECRET2FA"></textarea>
+    </div>
+
+    <div class="card">
+        <button onclick="vaoTrangLay()">➡️ Vào trang lấy STT</button>
+        <div class="note">Mỗi dòng: stt|user|pass|2FA</div>
+    </div>
+</div>
+    </div>
+</div>
+</div>
+<!-- PAGE: LẤY STT -->
+<div id="pageGet" style="display:none">
+    <div class="card">
+        <button onclick="layAcc()">🎯 Nhận STT</button>
+        <button style="background:#999" onclick="quayLai()">⬅️ Quay lại nhập</button>
+    </div>
+
+    <div class="card" id="accBox" style="display:none">
+        <div class="field"><b>STT:</b><br><span id="acc"></span></div>
+        <button class="copy" onclick="copyText(acc.innerText)">STT</button>
+
+        <div class="field"><b>User:</b><br><span id="user"></span></div>
+        <button class="copy" onclick="copyText(user.innerText)">USER</button>
+
+        <div class="field"><b>Pass:</b><br><span id="pass"></span></div>
+        <button class="copy" onclick="copyText(pass.innerText)">PASS</button>
+    </div>
+
+    <div class="card" id="faBox" style="display:none">
+        <b>🔐 Mã 2FA</b>
+        <div class="otp" id="otp">------</div>
+        <button class="copy" onclick="copyText(otp.innerText)">2FA</button>
+    </div>
+</div>
+
+<script>
+/* ================= CORE ================= */
+let list = [];
+let timer = null; // chỉ khai báo 1 lần
+
+function vaoTrangLay() {
+    if (!accList.value.trim()) {
+        alert('❌ Chưa nhập danh sách');
+        return;
+    }
+    pageInput.style.display = 'none';
+    pageGet.style.display = 'block';
+}
+
+function quayLai() {
+    pageGet.style.display = 'none';
+    pageInput.style.display = 'block';
+}
+
+function layAcc() {
+    if (list.length === 0) {
+        list = accList.value.trim().split(/\n+/).filter(Boolean);
+    }
+    if (!list[0]) {
+        alert('❌ Hết STT');
+        return;
+    }
+
+    // Format: stt|user|pass|2FA
+    const parts = list.shift().trim().split('|');
+    const sttVal  = parts[0] || '';
+    const userVal = parts[1] || '';
+    const passVal = parts[2] || '';
+    const secret  = parts[3] || '';
+
+    acc.innerText  = sttVal;
+    user.innerText = userVal;
+    pass.innerText = passVal;
+    accBox.style.display = 'block';
+
+    if (secret) start2FA(secret);
+    else faBox.style.display = 'none';
+}
+
+/* ================= COPY ================= */
+function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
+    } else {
+        fallbackCopy(text);
+    }
+}
+
+function fallbackCopy(text) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    try {
+        document.execCommand('copy');
+    } catch (e) {
+        alert('❌ Không copy được trên trình duyệt này');
+    }
+    document.body.removeChild(ta);
+}
+
+/* ================= 2FA ================= */
+function base32ToBytes(base32) {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+    let bits = '';
+    const bytes = [];
+
+    base32 = base32.replace(/=+$/, '').toUpperCase();
+
+    for (const c of base32) {
+        const val = chars.indexOf(c);
+        if (val === -1) continue;
+        bits += val.toString(2).padStart(5, '0');
+    }
+
+    for (let i = 0; i + 8 <= bits.length; i += 8) {
+        bytes.push(parseInt(bits.slice(i, i + 8), 2));
+    }
+    return new Uint8Array(bytes);
+}
+
+async function generateTOTP(secret) {
+    const key = base32ToBytes(secret);
+    const counter = Math.floor(Date.now() / 1000 / 30);
+
+    const buf = new ArrayBuffer(8);
+    new DataView(buf).setUint32(4, counter);
+
+    const cryptoKey = await crypto.subtle.importKey(
+        'raw', key, { name: 'HMAC', hash: 'SHA-1' }, false, ['sign']
+    );
+
+    const hmac = new Uint8Array(await crypto.subtle.sign('HMAC', cryptoKey, buf));
+    const offset = hmac[hmac.length - 1] & 0xf;
+
+    const code = (
+        ((hmac[offset] & 0x7f) << 24) |
+        ((hmac[offset + 1] & 0xff) << 16) |
+        ((hmac[offset + 2] & 0xff) << 8) |
+        (hmac[offset + 3] & 0xff)
+    ) % 1000000;
+
+    return code.toString().padStart(6, '0');
+}
+
+function start2FA(secret) {
+    clearInterval(timer);
+    faBox.style.display = 'block';
+
+    const update = async () => {
+        otp.innerText = await generateTOTP(secret);
+    };
+
+    update();
+    timer = setInterval(update, 1000);
+}
+</script>
+
+</body>
+</html>
